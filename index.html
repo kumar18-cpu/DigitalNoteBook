@@ -34,8 +34,7 @@
       box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
     }
 
-    .toolbar button, .toolbar input[type="color"],
-    .bottom-toolbar button, .bottom-toolbar input[type="color"] {
+    .toolbar button, .toolbar input[type="color"], .bottom-toolbar button {
       padding: 10px 15px;
       margin: 5px;
       font-size: 16px;
@@ -86,6 +85,12 @@
     .hidden {
       display: none;
     }
+
+    .page-indicator {
+      text-align: center;
+      font-size: 18px;
+      margin: 10px;
+    }
   </style>
 </head>
 <body>
@@ -97,7 +102,7 @@
     <button onclick="zoomIn()">Zoom In</button>
     <button onclick="zoomOut()">Zoom Out</button>
     <input type="file" id="imageUpload" accept="image/*" />
-    <button onclick="exportPDF()">Export to PDF</button>
+    <button onclick="saveToLocal()">Save to Local</button>
   </div>
 
   <div class="notebook" id="notebook">
@@ -105,9 +110,12 @@
     <textarea id="textArea" placeholder="Start typing..."></textarea>
   </div>
 
+  <div class="page-indicator" id="pageIndicator">Page 1</div>
+
   <div class="bottom-toolbar">
     <button onclick="prevPage()">Previous Page</button>
     <button onclick="nextPage()">Next Page</button>
+    <button onclick="exportPDF()">Export to PDF</button>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -120,12 +128,13 @@
     const toggleBtn = document.getElementById("toggleBtn");
     const colorPicker = document.getElementById("colorPicker");
     const imageUpload = document.getElementById("imageUpload");
+    const pageIndicator = document.getElementById("pageIndicator");
 
     let isDrawing = false;
     let drawingEnabled = false;
     let scale = 1;
     let currentPage = 0;
-    const pages = [];
+    const pages = JSON.parse(localStorage.getItem("notebookPages") || "[]");
 
     function resizeCanvas() {
       canvas.width = notebook.clientWidth;
@@ -137,6 +146,10 @@
       resizeCanvas();
       loadPage(currentPage);
     });
+
+    function updatePageIndicator() {
+      pageIndicator.textContent = `Page ${currentPage + 1}`;
+    }
 
     function saveCurrentPage() {
       const text = textArea.value;
@@ -151,6 +164,7 @@
       img.onload = () => ctx.drawImage(img, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (page.image) img.src = page.image;
+      updatePageIndicator();
     }
 
     function nextPage() {
@@ -176,18 +190,26 @@
       toggleBtn.textContent = drawingEnabled ? "Switch to Typing" : "Toggle Drawing";
     });
 
+    function getRelativePosition(e) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left),
+        y: (e.clientY - rect.top)
+      };
+    }
+
     canvas.addEventListener("mousedown", (e) => {
       if (!drawingEnabled) return;
       isDrawing = true;
-      const rect = canvas.getBoundingClientRect();
+      const pos = getRelativePosition(e);
       ctx.beginPath();
-      ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+      ctx.moveTo(pos.x, pos.y);
     });
 
     canvas.addEventListener("mousemove", (e) => {
       if (!drawingEnabled || !isDrawing) return;
-      const rect = canvas.getBoundingClientRect();
-      ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+      const pos = getRelativePosition(e);
+      ctx.lineTo(pos.x, pos.y);
       ctx.strokeStyle = colorPicker.value;
       ctx.lineWidth = 2;
       ctx.lineCap = "round";
@@ -245,7 +267,11 @@
       const reader = new FileReader();
       reader.onload = () => {
         const img = new Image();
-        img.onload = () => ctx.drawImage(img, 50, 50, 200, 200);
+        img.onload = () => {
+          canvas.style.pointerEvents = "auto";
+          canvas.style.zIndex = 3;
+          ctx.drawImage(img, 50, 50, 200, 200);
+        };
         img.src = reader.result;
       };
       reader.readAsDataURL(file);
@@ -263,6 +289,12 @@
         if (i < currentPage) pdf.addPage();
       }
       pdf.save("notebook.pdf");
+    }
+
+    function saveToLocal() {
+      saveCurrentPage();
+      localStorage.setItem("notebookPages", JSON.stringify(pages));
+      alert("Saved to local storage.");
     }
 
     resizeCanvas();
