@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Digital Notebook</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: cursive;
+      background: #fff;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      background: #f0f0f0;
+      padding: 10px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+
+    .bottom-toolbar {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      background: #f0f0f0;
+      padding: 10px;
+      position: sticky;
+      bottom: 0;
+      z-index: 10;
+      box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+    }
+
+    .toolbar button, .toolbar input[type="color"],
+    .bottom-toolbar button, .bottom-toolbar input[type="color"] {
+      padding: 10px 15px;
+      margin: 5px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .notebook {
+      position: relative;
+      width: 90%;
+      max-width: 800px;
+      height: 80vh;
+      margin: 20px auto;
+      background: repeating-linear-gradient(
+        white,
+        white 34px,
+        #add8e6 34px,
+        #add8e6 35px
+      );
+      border: 1px solid #ccc;
+      overflow: hidden;
+    }
+
+    textarea, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    textarea {
+      z-index: 2;
+      background: transparent;
+      border: none;
+      font-size: 24px;
+      line-height: 35px;
+      padding: 10px;
+      resize: none;
+      outline: none;
+    }
+
+    canvas {
+      z-index: 1;
+      background: transparent;
+      touch-action: none;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="toolbar">
+    <button id="toggleBtn">Toggle Drawing</button>
+    <input type="color" id="colorPicker" value="#000000" />
+    <button onclick="clearAll()">Clear</button>
+    <button onclick="zoomIn()">Zoom In</button>
+    <button onclick="zoomOut()">Zoom Out</button>
+    <input type="file" id="imageUpload" accept="image/*" />
+    <button onclick="exportPDF()">Export to PDF</button>
+  </div>
+
+  <div class="notebook" id="notebook">
+    <canvas id="canvas"></canvas>
+    <textarea id="textArea" placeholder="Start typing..."></textarea>
+  </div>
+
+  <div class="bottom-toolbar">
+    <button onclick="prevPage()">Previous Page</button>
+    <button onclick="nextPage()">Next Page</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script>
+    const { jsPDF } = window.jspdf;
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const textArea = document.getElementById("textArea");
+    const notebook = document.getElementById("notebook");
+    const toggleBtn = document.getElementById("toggleBtn");
+    const colorPicker = document.getElementById("colorPicker");
+    const imageUpload = document.getElementById("imageUpload");
+
+    let isDrawing = false;
+    let drawingEnabled = false;
+    let scale = 1;
+    let currentPage = 0;
+    const pages = [];
+
+    function resizeCanvas() {
+      canvas.width = notebook.clientWidth;
+      canvas.height = notebook.clientHeight;
+    }
+
+    window.addEventListener("resize", () => {
+      saveCurrentPage();
+      resizeCanvas();
+      loadPage(currentPage);
+    });
+
+    function saveCurrentPage() {
+      const text = textArea.value;
+      const image = canvas.toDataURL();
+      pages[currentPage] = { text, image };
+    }
+
+    function loadPage(index) {
+      const page = pages[index] || { text: "", image: "" };
+      textArea.value = page.text;
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (page.image) img.src = page.image;
+    }
+
+    function nextPage() {
+      saveCurrentPage();
+      currentPage++;
+      resizeCanvas();
+      loadPage(currentPage);
+    }
+
+    function prevPage() {
+      if (currentPage === 0) return;
+      saveCurrentPage();
+      currentPage--;
+      resizeCanvas();
+      loadPage(currentPage);
+    }
+
+    toggleBtn.addEventListener("click", () => {
+      drawingEnabled = !drawingEnabled;
+      canvas.style.pointerEvents = drawingEnabled ? "auto" : "none";
+      canvas.style.zIndex = drawingEnabled ? 3 : 1;
+      textArea.style.zIndex = drawingEnabled ? 1 : 2;
+      toggleBtn.textContent = drawingEnabled ? "Switch to Typing" : "Toggle Drawing";
+    });
+
+    canvas.addEventListener("mousedown", (e) => {
+      if (!drawingEnabled) return;
+      isDrawing = true;
+      const rect = canvas.getBoundingClientRect();
+      ctx.beginPath();
+      ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+    });
+
+    canvas.addEventListener("mousemove", (e) => {
+      if (!drawingEnabled || !isDrawing) return;
+      const rect = canvas.getBoundingClientRect();
+      ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+      ctx.strokeStyle = colorPicker.value;
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      ctx.stroke();
+    });
+
+    canvas.addEventListener("mouseup", () => isDrawing = false);
+    canvas.addEventListener("mouseleave", () => isDrawing = false);
+
+    canvas.addEventListener("touchstart", (e) => {
+      if (!drawingEnabled) return;
+      e.preventDefault();
+      isDrawing = true;
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches[0];
+      ctx.beginPath();
+      ctx.moveTo(touch.clientX - rect.left, touch.clientY - rect.top);
+    });
+
+    canvas.addEventListener("touchmove", (e) => {
+      if (!isDrawing || !drawingEnabled) return;
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches[0];
+      ctx.lineTo(touch.clientX - rect.left, touch.clientY - rect.top);
+      ctx.strokeStyle = colorPicker.value;
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      ctx.stroke();
+    });
+
+    canvas.addEventListener("touchend", () => isDrawing = false);
+    canvas.addEventListener("touchcancel", () => isDrawing = false);
+
+    function clearAll() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      textArea.value = "";
+    }
+
+    function zoomIn() {
+      scale += 0.1;
+      notebook.style.transform = `scale(${scale})`;
+      notebook.style.transformOrigin = "top left";
+    }
+
+    function zoomOut() {
+      scale = Math.max(0.5, scale - 0.1);
+      notebook.style.transform = `scale(${scale})`;
+      notebook.style.transformOrigin = "top left";
+    }
+
+    imageUpload.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => ctx.drawImage(img, 50, 50, 200, 200);
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    async function exportPDF() {
+      const pdf = new jsPDF();
+      for (let i = 0; i <= currentPage; i++) {
+        const page = pages[i] || { text: "", image: "" };
+        pdf.setFontSize(12);
+        pdf.text(page.text || "", 10, 20);
+        if (page.image) {
+          pdf.addImage(page.image, 'PNG', 10, 30, 180, 160);
+        }
+        if (i < currentPage) pdf.addPage();
+      }
+      pdf.save("notebook.pdf");
+    }
+
+    resizeCanvas();
+    loadPage(currentPage);
+  </script>
+</body>
+</html>
